@@ -1,0 +1,25 @@
+id: 7zip
+name: 7-Zip
+publisher: Igor Pavlov
+description: 7-Zip file archiver.
+homepage: https://www.7-zip.org/
+sources:
+  x64:
+    url: https://www.7-zip.org/a/7z2501-x64.msi
+  arm64:
+    url: https://www.7-zip.org/a/7z2501-arm64.exe
+version: "25.01"
+install: 'msiexec /i "{filename}" /qn /norestart'
+uninstall: 'msiexec /x {product_code} /qn /norestart'
+install_context: system
+detection:
+  - type: file
+    path: '%ProgramFiles%\7-Zip'
+    file: 7z.exe
+    detection: exists
+requirements:
+  arch: [x64]
+  min_os: W10_1607
+# Notes: 7-Zip ships an MSI only for x64/x86. The arm64 build is an NSIS-style exe
+# (silent switch /S). If you want to test arm64 in the VM, override:
+#   install: '"{filename}" /S'   uninstall: '"%ProgramFiles%\7-Zip\Uninstall.exe" /S'

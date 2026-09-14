@@ -1,0 +1,27 @@
+id: cisco-webex
+name: Cisco Webex
+display_name: 'Cisco Webex ({arch})'
+publisher: Cisco Systems, Inc.
+description: Webex App for messaging, calling, and meetings; non-localized enterprise MSI, installed for all users.
+homepage: https://www.webex.com/
+# Cisco requires the non-localized MSI for bulk deployment.
+# https://help.webex.com/en-us/article/nw5p67g/Webex-Installation-and-Automatic-Upgrade
+sources:
+  x64:
+    url: https://binaries.webex.com/WebexOfclDesktop-Win-64-Gold/Webex_en.msi
+  arm64:
+    # Cisco's ARM64 MSI uses an x64 summary template; MSI_ARCHTYPE=arm64 and
+    # LaunchCondition restrict the actual package to Windows ARM64.
+    url: https://binaries.webex.com/WebexOfclDesktop-Win-Arm-64-Gold/Webex_en.msi
+version: auto
+install: 'msiexec /i "{filename}" /qn /norestart ALLUSERS=1 ACCEPT_EULA=TRUE INSTALLWV2=1'
+uninstall: 'msiexec /x {product_code} /qn /norestart'
+install_context: system
+restart_behavior: basedOnReturnCode
+detection: auto
+requirements:
+  # Omit arch so each output is restricted to its own architecture.
+  # MSI LaunchCondition requires Windows build 17763 (Windows 10 1809).
+  min_os: W10_1809
+  min_ram_mb: 4096
+notes: 'Deploy to matching architecture only. INSTALLWV2=1 installs the required WebView2 runtime; allow network access for prerequisites and meeting components. Webex manages application updates. Windows N editions require Media Feature Pack. Deployment minimum is Windows 10 1809; use a Cisco-supported Windows release.'

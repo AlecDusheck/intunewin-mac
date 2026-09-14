@@ -1,0 +1,53 @@
+# CLAUDE.md — how to work in this repo
+
+This project turns "make me an intunewin for X" into a built, tested package. Use `./bin/iwm`
+(never `IntuneWinAppUtil.exe`; it does not exist here). Run `./bin/iwm doctor` first if unsure.
+
+## The standard workflow for "package app X"
+
+1. **Recipe.** Check `./bin/iwm recipe list`. If missing, write `recipes/<id>.yaml` yourself
+   (copy the closest existing one). Find the vendor's *enterprise/offline* installer URL, prefer MSI,
+   include both `x64` and `arm64` sources when the vendor has them. Verify the URL with
+   `curl -sIL <url> | grep -iE "^HTTP|content-(length|type)"` before committing to it.
+2. **Build.** `./bin/iwm build <id> --arch x64 --arch arm64`. Output lands in `dist/<id>/` with
+   `.intunewin`, `.intune.json` (Graph win32LobApp body), `.rules.json`, `.md` (portal notes).
+3. **Test** in the VM: `./bin/iwm test <id>` (uses the VM's native arch when the recipe has it) and
+   `--uninstall` when the user cares about removal. Read `reports/<id>-<arch>/latest/report.md`.
+   Iterate on install switches / detection rules until it passes.
+4. **Report back** with: package path(s), install/uninstall command lines, detection rules, the test
+   verdict with exit code, and anything the user must set manually in the portal.
+   `./bin/iwm publish` exists for Graph upload but is beta; offer it, do not run it unasked.
+
+## Silent-install cheat sheet
+
+| Installer type | Install | Uninstall | Detection |
+|---|---|---|---|
+| MSI | `msiexec /i "{filename}" /qn /norestart` | `msiexec /x {product_code} /qn /norestart` | `auto` (product code) |
+| NSIS exe | `"{filename}" /S` | `"%ProgramFiles%\App\uninstall.exe" /S` | file exists / version |
+| Inno Setup exe | `"{filename}" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES` | `"%ProgramFiles%\App\unins000.exe" /VERYSILENT` | registry Uninstall key |
+| InstallShield | `"{filename}" /s /v"/qn"` | vendor-specific | registry |
+| Squirrel / per-user | set `install_context: user` | | HKCU registry / `%LocalAppData%` file |
+| Script-driven | `powershell -ExecutionPolicy Bypass -File install.ps1` with `extra_files:` | | script rule |
+
+Return codes 0/1707 success, 3010 soft reboot, 1641 hard reboot, 1618 retry are defaults.
+
+## VM facts
+
+* One VM, name `win11`, Windows 11 Pro ARM64, user `iwm`, SSH on `127.0.0.1:2222`, key in `vm/win11/`.
+* `clean` snapshot is the baseline; `iwm test` always restores it first and after.
+* Debugging a failed install: `./bin/iwm vm run "msiexec /i C:\iwm\pkg\<id>\x.msi /qn /l*v C:\iwm\logs\x.log"`
+  then `./bin/iwm vm pull C:\iwm\logs\x.log ./x.log`. `./bin/iwm vm screenshot` shows the desktop.
+  `./bin/iwm vm ssh` opens PowerShell in the guest. `./bin/iwm vm apps` lists installed programs.
+* Never delete the VM (`vm delete`) without asking; recreating it takes 30+ minutes.
+* Guest-side code lives in `iwm/vm/guest/agent.ps1`; it is copied at VM setup. After editing it,
+  push it manually: `./bin/iwm vm push iwm/vm/guest/agent.ps1 C:\iwm\agent.ps1` then re-snapshot
+  `clean` (`./bin/iwm vm snapshot clean`).
+
+## Code map
+
+`iwm/packager.py` format + crypto · `iwm/recipes.py` YAML → package/manifest · `iwm/testing.py`
+test orchestration + report · `iwm/vm/qemu.py` VM lifecycle · `iwm/vm/unattend.py` autounattend ·
+`iwm/publish.py` Graph upload · `iwm/cli.py` argparse front-end.
+
+Keep recipes vendor-truthful (no third-party mirrors), keep `dist/`, `work/`, `vm/`, `cache/` out
+of git (already ignored), and never commit `*.encryption.json`.

@@ -1,0 +1,24 @@
+id: notepad-plus-plus
+name: Notepad++
+publisher: Notepad++ Team
+description: Notepad++ source code editor (installer from the latest GitHub release).
+homepage: https://notepad-plus-plus.org/
+latest:
+  github_release: notepad-plus-plus/notepad-plus-plus
+  asset:
+    x64: '^npp\.[\d.]+\.Installer\.x64\.exe$'
+    arm64: '^npp\.[\d.]+\.Installer\.arm64\.exe$'
+version: auto                      # from the GitHub release tag
+install: '"{filename}" /S'
+uninstall: '"%ProgramFiles%\Notepad++\uninstall.exe" /S'
+install_context: system
+detection:
+  - type: file
+    path: '%ProgramFiles%\Notepad++'
+    file: notepad++.exe
+    detection: version
+    operator: greaterThanOrEqual
+    value: '{version}'
+requirements:
+  arch: [x64, arm64]
+  min_os: W10_1607
