@@ -306,6 +306,16 @@ def build(recipe: Recipe, arch: str, refresh: bool = False, ctx: Optional[dict] 
             "files": res.files, "size": out.stat().st_size}
 
 
+def graph_os_release(v: str) -> str:
+    """Recipe min_os (W10_1809, W11_22H2, or already 1809) -> Graph minimumSupportedWindowsRelease."""
+    v = str(v)
+    if v.upper().startswith("W10_"):
+        return v[4:]
+    if v.upper().startswith("W11_"):
+        return "Windows11_" + v[4:]
+    return v
+
+
 def graph_body(recipe: Recipe, ctx: dict, res: packager.BuildResult, rules: list[dict]) -> dict:
     d = recipe.data
     req = d.get("requirements") or {}
@@ -318,6 +328,7 @@ def graph_body(recipe: Recipe, ctx: dict, res: packager.BuildResult, rules: list
     body = {
         "@odata.type": "#microsoft.graph.win32LobApp",
         "displayName": render(d.get("display_name", "{name}"), ctx),
+        "displayVersion": str(ctx["version"]),
         "description": render(d.get("description", "{name}"), ctx),
         "publisher": ctx.get("publisher") or ctx.get("manufacturer") or "",
         "developer": d.get("developer", ""),
@@ -335,7 +346,7 @@ def graph_body(recipe: Recipe, ctx: dict, res: packager.BuildResult, rules: list
             "deviceRestartBehavior": d.get("restart_behavior", "basedOnReturnCode"),
         },
         "applicableArchitectures": ",".join(req.get("arch") or [arch]),
-        "minimumSupportedWindowsRelease": req.get("min_os", "W10_1607"),
+        "minimumSupportedWindowsRelease": graph_os_release(req.get("min_os", "W10_1607")),
         "minimumFreeDiskSpaceInMB": req.get("min_disk_mb"),
         "minimumMemoryInMB": req.get("min_ram_mb"),
         "rules": rules,

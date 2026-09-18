@@ -11,8 +11,9 @@ Flow (per Microsoft's documented content upload sequence):
   7. GET    .../files/{f}  until uploadState == commitFileSuccess
   8. PATCH  app  { committedContentVersion: v }
 
-Auth: MSAL device-code flow with the Microsoft Graph PowerShell public client id (or your own app
-via --client-id/--tenant). Scope DeviceManagementApps.ReadWrite.All.
+Auth: $IWM_GRAPH_TOKEN if set (any token with DeviceManagementApps.ReadWrite.All), otherwise MSAL
+device-code flow with the Microsoft Graph PowerShell public client id (or your own app via
+--client-id/--tenant).
 
 NOTE: this module has not been exercised against a live tenant from this project yet; the request
 shapes follow the public docs and the widely used IntuneWin32App PowerShell module.
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 import time
 import zipfile
@@ -104,7 +106,8 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
         payload_info = zf.getinfo(packager.PAYLOAD_PATH)
         size_encrypted = payload_info.file_size
 
-    g = Graph(token or get_token(tenant, client_id))
+    # An existing Graph token (e.g. from Connect-MgGraph) avoids a second, device-code sign-in.
+    g = Graph(token or os.environ.get("IWM_GRAPH_TOKEN") or get_token(tenant, client_id))
     body = _prepare_body(manifest)
     if app_id:
         cur = g.req("GET", f"/deviceAppManagement/mobileApps/{app_id}")

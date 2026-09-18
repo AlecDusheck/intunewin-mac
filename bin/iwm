@@ -2,4 +2,5 @@
 # Entry point. Uses the project venv if present, else system python3.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -x "$HERE/.venv/bin/python" ]; then PY="$HERE/.venv/bin/python"; else PY="$(command -v python3)"; fi
-cd "$HERE" && exec "$PY" -m iwm "$@"
+# No cd: relative paths in arguments stay relative to the caller.
+PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}" exec "$PY" -m iwm "$@"
