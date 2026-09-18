@@ -109,6 +109,7 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
     # An existing Graph token (e.g. from Connect-MgGraph) avoids a second, device-code sign-in.
     g = Graph(token or os.environ.get("IWM_GRAPH_TOKEN") or get_token(tenant, client_id))
     body = _prepare_body(manifest)
+    keep_icon = None
     if app_id:
         cur = g.req("GET", f"/deviceAppManagement/mobileApps/{app_id}")
         if cur.get("@odata.type") != "#microsoft.graph.win32LobApp":
@@ -120,7 +121,8 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
         # A PATCH without largeIcon clears the icon, so send the current one back.
         icon = g.req("GET", f"/deviceAppManagement/mobileApps/{app_id}?$select=largeIcon").get("largeIcon")
         if icon and icon.get("value"):
-            body["largeIcon"] = {"@odata.type": "#microsoft.graph.mimeContent", "type": icon.get("type"), "value": icon["value"]}
+            keep_icon = {"@odata.type": "#microsoft.graph.mimeContent", "type": icon.get("type"), "value": icon["value"]}
+            body["largeIcon"] = keep_icon
         print(f"updating app '{cur.get('displayName')}' ({app_id}) to {body.get('displayVersion')}", file=sys.stderr)
         g.req("PATCH", f"/deviceAppManagement/mobileApps/{app_id}", data=json.dumps(body))
     else:
@@ -178,8 +180,10 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
         time.sleep(5)
     else:
         raise TimeoutError("commit did not complete")
-    g.req("PATCH", f"/deviceAppManagement/mobileApps/{app_id}",
-          data=json.dumps({"@odata.type": "#microsoft.graph.win32LobApp", "committedContentVersion": vid}))
+    commit = {"@odata.type": "#microsoft.graph.win32LobApp", "committedContentVersion": vid}
+    if keep_icon:
+        commit["largeIcon"] = keep_icon    # this PATCH clears the icon too unless it's resent
+    g.req("PATCH", f"/deviceAppManagement/mobileApps/{app_id}", data=json.dumps(commit))
     print(f"published app id {app_id}", file=sys.stderr)
     return {"app_id": app_id, "content_version": vid, "file_id": fid,
             "portal": f"https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/{app_id}"}
