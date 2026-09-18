@@ -9,6 +9,7 @@ A recipe is a YAML file in recipes/<id>.yaml:
     description: ...
     sources:                        # one entry per architecture
       x64:   {url: https://..., filename: optional, sha256: optional}
+      # or {path: files/x/payload.zip}: a file from the workspace instead of a download
       arm64: {url: https://...}
     latest:                         # optional: resolve URL dynamically
       github_release: owner/repo
@@ -92,6 +93,15 @@ class Recipe:
             src.setdefault("url", url)
             src.setdefault("filename", asset_name)
             src["version"] = tag.lstrip("v")
+        if "path" in src:
+            p = Path(src["path"])
+            if not p.is_absolute():
+                p = next((b / p for b in (self.path.parent if self.path else Path("."), RECIPES.parent) if (b / p).exists()), p)
+            if not p.exists():
+                raise FileNotFoundError(f"recipe {self.id}: source path not found: {src['path']}")
+            src["url"] = p.resolve().as_uri()
+            src.setdefault("filename", p.name)
+            return src
         if "url" not in src:
             raise ValueError(f"recipe {self.id} has no source for arch {arch} (has: {', '.join(self.arches) or 'none'})")
         src.setdefault("filename", dl.filename_from_url(src["url"]))
@@ -418,7 +428,11 @@ def check_update(recipe: Recipe, arch: str) -> dict:
         src = recipe.source(arch)
     except Exception as e:
         return {"status": "error", "detail": str(e)[:200], "last": last}
-    if src.get("version"):                           # GitHub release: compare tags
+    if src["url"].startswith("file://"):              # local source: compare content
+        from urllib.parse import unquote, urlparse
+        now = {"sha256": dl.sha256_of(Path(unquote(urlparse(src["url"]).path)))}
+        changed = last is not None and last.get("sha256") != now["sha256"]
+    elif src.get("version"):                         # GitHub release: compare tags
         now = {"version": src["version"], "url": src["url"]}
         changed = last is not None and last.get("url") != src["url"]
     else:                                            # fixed URL: compare what the server reports

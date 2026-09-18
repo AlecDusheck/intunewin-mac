@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import re
 import sys
 import time
@@ -38,6 +39,17 @@ def download(url: str, dest: Path, sha256: Optional[str] = None, refresh: bool =
     A sidecar `<dest>.meta.json` records the source URL, ETag, size and hash."""
     dest = Path(dest)
     meta_path = dest.with_name(dest.name + ".meta.json")
+    if url.startswith("file://"):                      # local source (recipe `path:`): always fresh copy
+        from urllib.parse import unquote, urlparse
+        srcp = Path(unquote(urlparse(url).path))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(srcp, dest)
+        digest = sha256_of(dest)
+        if sha256 and digest.lower() != sha256.lower():
+            raise ValueError(f"sha256 mismatch for {srcp}")
+        meta_path.write_text(json.dumps({"url": url, "size": dest.stat().st_size, "sha256": digest,
+                                         "downloaded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, indent=2))
+        return dest
     if dest.exists() and not refresh:
         if sha256 and sha256_of(dest).lower() != sha256.lower():
             raise ValueError(f"{dest} exists but sha256 does not match; re-run with --refresh")
