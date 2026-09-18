@@ -15,8 +15,8 @@ Auth: $IWM_GRAPH_TOKEN if set (any token with DeviceManagementApps.ReadWrite.All
 device-code flow with the Microsoft Graph PowerShell public client id (or your own app via
 --client-id/--tenant).
 
-NOTE: this module has not been exercised against a live tenant from this project yet; the request
-shapes follow the public docs and the widely used IntuneWin32App PowerShell module.
+Creating apps has been exercised against a live tenant (2026-09). Updating an existing app
+(--app-id) follows the same documented sequence but has not been run live yet.
 """
 from __future__ import annotations
 
