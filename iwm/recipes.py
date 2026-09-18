@@ -23,7 +23,9 @@ A recipe is a YAML file in recipes/<id>.yaml:
     requirements: {min_os: W10_1607, arch: [x64, arm64]}
     extra_files: [scripts/foo.ps1]  # copied into the package next to the installer
     extract: [setup/Msi/a.msi]      # optional: the download is an archive (zip / self-extracting exe);
-                                    # only these members (flattened) go in the package, not the archive
+                                    # only these members (flattened) go in the package, not the archive.
+                                    # Or {paths: [setup/Install], exclude: [Wlan_wiz], flatten: false}
+                                    # to keep folder structure (paths are archive-relative, 7z wildcards ok)
     return_codes: default           # or a list of {code: 0, type: success}
 
 Placeholders usable in strings: {filename} {product_code} {product_version} {version}
@@ -129,15 +131,22 @@ def source_dir(recipe: Recipe, arch: str) -> Path:
     return WORK / recipe.id / arch / "source"
 
 
-def extract_members(archive: Path, dest: Path, members: list[str]) -> None:
-    """Extract archive members (paths inside the archive, wildcards allowed) flattened into dest."""
+def extract_members(archive: Path, dest: Path, spec) -> None:
+    """Extract archive members into dest. `spec` is a list of member paths (flattened), or a dict
+    {paths: [...], exclude: [...], flatten: bool} (exclude = names matched anywhere, recursively)."""
     sevenzip = shutil.which("7z") or shutil.which("7zz")
     if not sevenzip:
         raise RuntimeError("7z not found (brew install p7zip); needed for recipes with `extract`")
     import subprocess
-    subprocess.run([sevenzip, "e", "-y", f"-o{dest}", str(archive), *members], check=True, capture_output=True)
+    if isinstance(spec, dict):
+        members, excludes, flatten = spec.get("paths") or [], spec.get("exclude") or [], spec.get("flatten", False)
+    else:
+        members, excludes, flatten = list(spec), [], True
+    cmd = [sevenzip, "e" if flatten else "x", "-y", f"-o{dest}", str(archive), *members, *[f"-xr!{x}" for x in excludes]]
+    subprocess.run(cmd, check=True, capture_output=True)
     for m in members:
-        if not any(ch in m for ch in "*?") and not (dest / Path(m.replace("\\", "/")).name).exists():
+        target = dest / (Path(m.replace("\\", "/")).name if flatten else m.replace("\\", "/"))
+        if not any(ch in m for ch in "*?") and not target.exists():
             raise FileNotFoundError(f"{m} not found in {archive.name}")
     print(f"  extracted {len(list(dest.iterdir()))} file(s) from {archive.name}", file=sys.stderr)
 
