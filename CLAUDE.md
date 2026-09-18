@@ -24,6 +24,27 @@ The recipes in this repo are generic examples. Paths below are workspace-relativ
    verdict with exit code, and anything the user must set manually in the portal.
    `./bin/iwm publish` exists for Graph upload but is beta; offer it, do not run it unasked.
 
+## Updating a package to a new vendor version
+
+1. `./bin/iwm outdated [recipe…]` compares what each vendor serves now with the newest build in `dist/`
+   (every build writes `<id>-<version>-<arch>.source.json`: URL, ETag, Last-Modified, size, sha256).
+   GitHub-release recipes compare tags; fixed "latest" URLs compare ETag/Last-Modified/size.
+   Recipes with a pinned `sha256` never change by themselves: edit their `url` + `sha256` by hand.
+2. Rebuild with `--refresh` (otherwise a fixed "latest" URL reuses the cached, old download), VM-test.
+3. `./bin/iwm publish <pkg> --app-id <existing app id>` uploads it as a new content version of the
+   *same* Intune app (assignments, dependencies, supersedence and the Company Portal name/description/icon
+   stay). Detection must identify the version (MSI product code, a version comparison, or a script
+   package's version marker), or devices that have the old version will look "installed" and never update.
+
+Script-driven packages: write the package version somewhere detection can check it (e.g. a registry
+value set by install.ps1 from `-PackageVersion {version}`) and bump `version` when the scripts change.
+Intune runs install commands from a **32-bit** process: PowerShell scripts should relaunch themselves
+via `%WINDIR%\sysnative\WindowsPowerShell\v1.0\powershell.exe` (the VM agent runs 64-bit, so tests
+won't catch this).
+
+Vendor bundles (zip / self-extracting exe) can be trimmed at build time with `extract:` (7z member
+paths, flattened into the package).
+
 ## Silent-install cheat sheet
 
 | Installer type | Install | Uninstall | Detection |

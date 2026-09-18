@@ -313,13 +313,35 @@ def cmd_test(a) -> int:
 
 
 # ------------------------------------------------------------------ publish
+def cmd_outdated(a) -> int:
+    recipes = [rmod.load_recipe(r) for r in a.recipes] if a.recipes else rmod.list_recipes()
+    label = {"current": "up to date", "pinned-current": "up to date (pinned)", "update": "UPDATE AVAILABLE",
+             "unbuilt": "never built", "error": "check failed"}
+    todo = []
+    for r in recipes:
+        for arch in r.arches:
+            c = rmod.check_update(r, arch)
+            last = (c.get("last") or {}).get("version", "-")
+            now = (c.get("now") or {}).get("version") or (c.get("now") or {}).get("last_modified") or ""
+            print(f"{r.id:28} {arch:6} built {last:18} vendor {str(now)[:31]:31} {label[c['status']]}"
+                  + (f": {c['detail']}" if c.get("detail") else ""))
+            if c["status"] in ("update", "unbuilt"):
+                todo.append(f"iwm build {r.id} --arch {arch} --refresh")
+    pinned = [r.id for r in recipes if any((r.data.get("sources") or {}).get(x, {}).get("sha256") for x in r.arches)]
+    if pinned:
+        print(f"\npinned to one file (new vendor versions need a new url + sha256 in the recipe): {', '.join(pinned)}")
+    if todo:
+        print("\nto rebuild:\n  " + "\n  ".join(todo))
+    return 0
+
+
 def cmd_publish(a) -> int:
     from .publish import publish
     pkg = Path(a.intunewin)
     manifest = Path(a.manifest) if a.manifest else pkg.with_name(pkg.name.replace(".intunewin", ".intune.json"))
     if not manifest.exists():
         print(f"manifest not found: {manifest}", file=sys.stderr); return 1
-    _print(publish(pkg, manifest, tenant=a.tenant, client_id=a.client_id))
+    _print(publish(pkg, manifest, tenant=a.tenant, client_id=a.client_id, app_id=a.app_id))
     return 0
 
 
@@ -350,7 +372,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--install", help="install command (ad-hoc .intunewin only)"); s.add_argument("--uninstall-cmd"); s.add_argument("--rules", help="rules.json (ad-hoc .intunewin only)")
     s.add_argument("--account", default="system", choices=["system", "user"]); _test_opts(s); s.set_defaults(fn=cmd_test)
 
-    s = sp.add_parser("publish", help="upload a built package to Intune via Microsoft Graph"); s.add_argument("intunewin"); s.add_argument("--manifest"); s.add_argument("--tenant", default="common"); s.add_argument("--client-id", default=None); s.set_defaults(fn=cmd_publish)
+    s = sp.add_parser("publish", help="upload a built package to Intune via Microsoft Graph"); s.add_argument("intunewin"); s.add_argument("--manifest"); s.add_argument("--tenant", default="common"); s.add_argument("--client-id", default=None)
+    s.add_argument("--app-id", help="update this existing Intune app (new content version) instead of creating one"); s.set_defaults(fn=cmd_publish)
+    s = sp.add_parser("outdated", help="compare recipes' current vendor versions with the last builds in dist/")
+    s.add_argument("recipes", nargs="*"); s.set_defaults(fn=cmd_outdated)
 
     v = sp.add_parser("vm", help="manage the Windows test VM"); vs = v.add_subparsers(dest="vcmd", required=True)
     x = vs.add_parser("setup", help="create + unattended-install Windows from an ISO, then snapshot 'clean'")

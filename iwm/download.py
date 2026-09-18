@@ -95,5 +95,6 @@ def resolve_github_asset(repo: str, asset_regex: str) -> tuple[str, str, str]:
 def head_info(url: str) -> dict:
     r = requests.head(url, allow_redirects=True, timeout=30, headers={"User-Agent": UA})
     return {"status": r.status_code, "size": int(r.headers.get("content-length") or 0),
+            "etag": r.headers.get("etag"), "last_modified": r.headers.get("last-modified"),
             "type": r.headers.get("content-type"), "final_url": r.url,
             "filename": filename_from_url(url, r)}

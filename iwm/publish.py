@@ -92,7 +92,10 @@ def _prepare_body(manifest: dict) -> dict:
 
 
 def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client_id: str = DEFAULT_CLIENT_ID,
-            token: str | None = None) -> dict:
+            token: str | None = None, app_id: str | None = None) -> dict:
+    """Create the app, or with app_id update an existing one in place: PATCH its metadata (version,
+    commands, detection rules) and upload the package as a new content version. Assignments,
+    dependencies and supersedence are kept."""
     intunewin = Path(intunewin)
     manifest = json.loads(Path(manifest_path).read_text())
     meta = packager.read_metadata(intunewin)
@@ -103,9 +106,20 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
 
     g = Graph(token or get_token(tenant, client_id))
     body = _prepare_body(manifest)
-    print(f"creating app '{body['displayName']}'", file=sys.stderr)
-    app = g.req("POST", "/deviceAppManagement/mobileApps", data=json.dumps(body))
-    app_id = app["id"]
+    if app_id:
+        cur = g.req("GET", f"/deviceAppManagement/mobileApps/{app_id}")
+        if cur.get("@odata.type") != "#microsoft.graph.win32LobApp":
+            raise RuntimeError(f"app {app_id} is {cur.get('@odata.type')}, not a Win32 app")
+        # Keep the name/description/icon people see in Company Portal; update the package-specific fields.
+        for k in ("displayName", "description", "largeIcon", "publisher", "developer", "owner", "notes",
+                  "informationUrl", "privacyInformationUrl", "isFeatured"):
+            body.pop(k, None)
+        print(f"updating app '{cur.get('displayName')}' ({app_id}) to {body.get('displayVersion')}", file=sys.stderr)
+        g.req("PATCH", f"/deviceAppManagement/mobileApps/{app_id}", data=json.dumps(body))
+    else:
+        print(f"creating app '{body['displayName']}'", file=sys.stderr)
+        app = g.req("POST", "/deviceAppManagement/mobileApps", data=json.dumps(body))
+        app_id = app["id"]
     ver = g.req("POST", f"/deviceAppManagement/mobileApps/{app_id}/microsoft.graph.win32LobApp/contentVersions", data="{}")
     vid = ver["id"]
     f = g.req("POST", f"/deviceAppManagement/mobileApps/{app_id}/microsoft.graph.win32LobApp/contentVersions/{vid}/files",

@@ -16,7 +16,8 @@ testing installs the way Intune runs them (as SYSTEM, then detection rules).
 | `iwm test <recipe\|file.intunewin> [--uninstall]` | restore clean VM, install as SYSTEM, run detection, report |
 | `iwm pack <folder> --setup x.msi` / `inspect` / `extract` | work with arbitrary packages |
 | `iwm vm setup\|start\|stop\|snapshot\|restore\|run\|ssh\|screenshot` | drive the VM |
-| `iwm publish <file.intunewin>` | upload via Microsoft Graph (beta) |
+| `iwm outdated [recipe…]` | vendor's current version vs. last build; prints the rebuild commands |
+| `iwm publish <file.intunewin> [--app-id ID]` | upload via Microsoft Graph (beta); `--app-id` updates an existing app |
 
 Recipes live in `recipes/*.yaml` (see `iwm/recipes.py` for fields). Set `IWM_WORKSPACE=<dir>` to
 use `<dir>/recipes`, `<dir>/dist` and `<dir>/reports` instead, e.g. an organization's config repo;

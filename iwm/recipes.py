@@ -22,6 +22,8 @@ A recipe is a YAML file in recipes/<id>.yaml:
     detection: auto                 # auto (MSI product code) or a list of rules
     requirements: {min_os: W10_1607, arch: [x64, arm64]}
     extra_files: [scripts/foo.ps1]  # copied into the package next to the installer
+    extract: [setup/Msi/a.msi]      # optional: the download is an archive (zip / self-extracting exe);
+                                    # only these members (flattened) go in the package, not the archive
     return_codes: default           # or a list of {code: 0, type: success}
 
 Placeholders usable in strings: {filename} {product_code} {product_version} {version}
@@ -127,13 +129,35 @@ def source_dir(recipe: Recipe, arch: str) -> Path:
     return WORK / recipe.id / arch / "source"
 
 
+def extract_members(archive: Path, dest: Path, members: list[str]) -> None:
+    """Extract archive members (paths inside the archive, wildcards allowed) flattened into dest."""
+    sevenzip = shutil.which("7z") or shutil.which("7zz")
+    if not sevenzip:
+        raise RuntimeError("7z not found (brew install p7zip); needed for recipes with `extract`")
+    import subprocess
+    subprocess.run([sevenzip, "e", "-y", f"-o{dest}", str(archive), *members], check=True, capture_output=True)
+    for m in members:
+        if not any(ch in m for ch in "*?") and not (dest / Path(m.replace("\\", "/")).name).exists():
+            raise FileNotFoundError(f"{m} not found in {archive.name}")
+    print(f"  extracted {len(list(dest.iterdir()))} file(s) from {archive.name}", file=sys.stderr)
+
+
 def fetch(recipe: Recipe, arch: str, refresh: bool = False) -> dict:
     """Download the installer (+extra files) into work/<id>/<arch>/source and return a context
     dict with everything needed to render commands and build metadata."""
     src = recipe.source(arch)
     sdir = source_dir(recipe, arch)
-    sdir.mkdir(parents=True, exist_ok=True)
-    installer = dl.download(src["url"], sdir / src["filename"], sha256=src.get("sha256"), refresh=refresh)
+    members = recipe.data.get("extract")
+    if members:
+        # The archive stays out of the package: download beside it, then rebuild source/ from scratch.
+        installer = dl.download(src["url"], sdir.parent / "download" / src["filename"],
+                                sha256=src.get("sha256"), refresh=refresh)
+        shutil.rmtree(sdir, ignore_errors=True)
+        sdir.mkdir(parents=True)
+        extract_members(installer, sdir, members)
+    else:
+        sdir.mkdir(parents=True, exist_ok=True)
+        installer = dl.download(src["url"], sdir / src["filename"], sha256=src.get("sha256"), refresh=refresh)
 
     # copy extra files (paths relative to the recipe file or project root)
     for extra in recipe.data.get("extra_files") or []:
@@ -269,6 +293,14 @@ def build(recipe: Recipe, arch: str, refresh: bool = False, ctx: Optional[dict] 
         "encryptedSize": out.stat().st_size,
     }, indent=2))
     (out_dir / f"{base}.md").write_text(portal_notes(recipe, ctx, res, rules))
+    # What this build was made from, so `iwm outdated` can tell when the vendor has something newer.
+    dl_meta = Path(ctx["installer"] + ".meta.json")
+    dl_meta = json.loads(dl_meta.read_text()) if dl_meta.exists() else {}
+    (out_dir / f"{base}.source.json").write_text(json.dumps({
+        "recipe": recipe.id, "arch": arch, "version": ctx["version"], "url": ctx["url"],
+        "filename": ctx["filename"],
+        **{k: dl_meta.get(k) for k in ("etag", "last_modified", "size", "sha256", "downloaded_at")},
+    }, indent=2))
     return {"intunewin": str(out), "manifest": str(out_dir / f"{base}.intune.json"),
             "rules": rules, "ctx": {k: v for k, v in ctx.items() if k != "msi"},
             "files": res.files, "size": out.stat().st_size}
@@ -349,3 +381,38 @@ def portal_notes(recipe: Recipe, ctx: dict, res: packager.BuildResult, rules: li
         lines += ["## MSI", "", f"- Product code: `{ctx['product_code']}`", f"- Product version: `{ctx['product_version']}`",
                   f"- Upgrade code: `{ctx['upgrade_code']}`", ""]
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- update check
+
+def last_build(recipe: Recipe, arch: str) -> Optional[dict]:
+    recs = sorted((DIST / recipe.id).glob(f"*-{arch}.source.json"), key=lambda p: p.stat().st_mtime)
+    return json.loads(recs[-1].read_text()) if recs else None
+
+
+def check_update(recipe: Recipe, arch: str) -> dict:
+    """Compare what the vendor serves now with the newest build in dist/.
+    status: current | update | unbuilt | pinned-current | error"""
+    last = last_build(recipe, arch)
+    try:
+        src = recipe.source(arch)
+    except Exception as e:
+        return {"status": "error", "detail": str(e)[:200], "last": last}
+    if src.get("version"):                           # GitHub release: compare tags
+        now = {"version": src["version"], "url": src["url"]}
+        changed = last is not None and last.get("url") != src["url"]
+    else:                                            # fixed URL: compare what the server reports
+        try:
+            h = dl.head_info(src["url"])
+        except Exception as e:
+            return {"status": "error", "detail": str(e)[:200], "last": last}
+        now = {"etag": h.get("etag"), "last_modified": h.get("last_modified"), "size": h.get("size")}
+        changed = last is not None and any(
+            last.get(k) and now.get(k) and str(last[k]) != str(now[k]) for k in ("etag", "last_modified", "size"))
+    if last is None:
+        status = "unbuilt"
+    elif changed:
+        status = "update"
+    else:
+        status = "pinned-current" if src.get("sha256") else "current"
+    return {"status": status, "now": now, "last": last}
