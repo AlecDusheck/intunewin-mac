@@ -93,6 +93,18 @@ def _prepare_body(manifest: dict) -> dict:
     return body
 
 
+def _renew_sas(g: "Graph", fpath: str) -> str:
+    g.req("POST", fpath + "/renewUpload", data="{}")
+    for _ in range(60):
+        f = g.req("GET", fpath)
+        if f.get("uploadState") == "azureStorageUriRenewalSuccess":
+            return f["azureStorageUri"]
+        if "fail" in (f.get("uploadState") or "").lower():
+            raise RuntimeError(f"renewUpload failed: {f.get('uploadState')}")
+        time.sleep(3)
+    raise TimeoutError("renewUpload did not complete")
+
+
 def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client_id: str = DEFAULT_CLIENT_ID,
             token: str | None = None, app_id: str | None = None) -> dict:
     """Create the app, or with app_id update an existing one in place: PATCH its metadata (version,
@@ -159,10 +171,16 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
             if not chunk:
                 break
             bid = base64.b64encode(f"block-{i:08d}".encode()).decode()
-            r = requests.put(f"{sas}&comp=block&blockid={bid}", data=chunk, timeout=300,
-                             headers={"x-ms-blob-type": "BlockBlob"})
-            if r.status_code >= 400:
-                raise RuntimeError(f"block upload failed: {r.status_code} {r.text[:500]}")
+            for attempt in range(4):
+                r = requests.put(f"{sas}&comp=block&blockid={bid}", data=chunk, timeout=300,
+                                 headers={"x-ms-blob-type": "BlockBlob"})
+                if r.status_code < 400:
+                    break
+                if r.status_code != 403 or attempt == 3:
+                    raise RuntimeError(f"block upload failed: {r.status_code} {r.text[:500]}")
+                # SAS no longer accepted: ask Intune for a fresh upload URI, then retry this block.
+                print(f"\n  upload URI rejected (403), renewing (attempt {attempt + 1})", file=sys.stderr)
+                sas = _renew_sas(g, fpath)
             block_ids.append(bid)
             i += 1
             print(f"\r  {i * BLOCK // 1048576} MB", end="", file=sys.stderr)
