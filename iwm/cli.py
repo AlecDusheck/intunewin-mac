@@ -356,7 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     x = vs.add_parser("setup", help="create + unattended-install Windows from an ISO, then snapshot 'clean'")
     x.add_argument("--iso"); x.add_argument("--arch", choices=["arm64", "x64"]); x.add_argument("--memory", type=int, default=6144); x.add_argument("--cpus", type=int, default=4)
     x.add_argument("--disk", type=int, default=64); x.add_argument("--ssh-port", type=int, default=2222); x.add_argument("--edition", default="Windows 11 Pro"); x.add_argument("--password")
-    x.add_argument("--display", help="e.g. cocoa to watch the install in a window"); x.add_argument("--timeout", type=int, default=3600); x.set_defaults(fn=cmd_vm_setup)
+    x.add_argument("--display", help="e.g. cocoa to watch the install in a window"); x.add_argument("--timeout", type=int, help="seconds (default 3600, x4 for an emulated arch)"); x.set_defaults(fn=cmd_vm_setup)
     x = vs.add_parser("start"); x.add_argument("--display"); x.add_argument("--wait", action="store_true"); x.set_defaults(fn=cmd_vm_start)
     x = vs.add_parser("stop"); x.add_argument("--force", action="store_true"); x.set_defaults(fn=cmd_vm_stop)
     x = vs.add_parser("status"); x.set_defaults(fn=cmd_vm_status)

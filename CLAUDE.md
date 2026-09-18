@@ -40,6 +40,10 @@ Return codes 0/1707 success, 3010 soft reboot, 1641 hard reboot, 1618 retry are 
 ## VM facts
 
 * One VM, name `win11`, Windows 11 Pro ARM64, user `iwm`, SSH on `127.0.0.1:2222`, key in `vm/win11/`.
+* x64-only software (e.g. kernel/print/scanner drivers with no ARM64 build) needs an x64 guest:
+  `iwm --vm win11-x64 vm setup --iso <Win11_x64.iso> --arch x64 --ssh-port 2223`, then
+  `iwm --vm win11-x64 test ...`. On Apple Silicon it runs under TCG emulation (`-cpu max`), several times
+  slower; install/boot/shutdown waits scale x4 automatically. Both VMs can run side by side.
 * `clean` snapshot is the baseline; `iwm test` always restores it first and after.
 * Debugging a failed install: `./bin/iwm vm run "msiexec /i C:\iwm\pkg\<id>\x.msi /qn /l*v C:\iwm\logs\x.log"`
   then `./bin/iwm vm pull C:\iwm\logs\x.log ./x.log`. `./bin/iwm vm screenshot` shows the desktop.

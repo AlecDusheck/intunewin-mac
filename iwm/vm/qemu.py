@@ -196,10 +196,27 @@ class VM:
             subprocess.run(["hdiutil", "detach", "-quiet", mount], check=False)
 
     # ------------------------------------------------------------------ command line
+    @property
+    def emulated(self) -> bool:
+        """Guest arch differs from the host's, so there is no hardware virtualization."""
+        return self.cfg.arch != host_arch()
+
+    @property
+    def time_factor(self) -> int:
+        """Multiplier for boot/install waits: emulated guests run several times slower."""
+        return 4 if self.emulated else 1
+
+    def accel_args(self) -> list[str]:
+        if not self.emulated:
+            return ["-accel", "hvf", "-cpu", "host"]
+        # e.g. an x64 guest on Apple Silicon (for x64-only drivers): full emulation, several times
+        # slower. `max` exposes SSE4.2/POPCNT, which Windows 11 24H2+ requires.
+        return ["-accel", "tcg,thread=multi,tb-size=1024", "-cpu", "max"]
+
     def qemu_args(self, install: bool = False, display: Optional[str] = None) -> list[str]:
         c = self.cfg
         code_fw, _ = self.firmware()
-        a = [self.qemu_bin(), "-name", f"iwm-{c.name}", "-accel", "hvf", "-cpu", "host",
+        a = [self.qemu_bin(), "-name", f"iwm-{c.name}", *self.accel_args(),
              "-smp", str(c.cpus), "-m", f"{c.memory_mb}M", "-rtc", "base=localtime,clock=host"]
         if c.arch == "arm64":
             a += ["-machine", "virt,highmem=on"]
@@ -278,7 +295,7 @@ class VM:
                     q.execute("system_powerdown")
             except Exception:
                 pass
-            for _ in range(timeout):
+            for _ in range(timeout * self.time_factor):
                 if not self.is_running():
                     break
                 time.sleep(1)
@@ -403,6 +420,7 @@ class VM:
             return False
 
     def wait_ssh(self, timeout: int = 900, interval: int = 10, screenshots: bool = False) -> None:
+        timeout *= self.time_factor
         t0 = time.time()
         n = 0
         while time.time() - t0 < timeout:
@@ -518,17 +536,19 @@ class VM:
                 self.start()
 
     # ------------------------------------------------------------------ unattended install
-    def install(self, display: Optional[str] = None, timeout: int = 3600) -> None:
+    def install(self, display: Optional[str] = None, timeout: Optional[int] = None) -> None:
         """Boot from the Windows ISO with autounattend, wait for the guest agent, snapshot 'clean'."""
         if self.cfg.installed:
             raise RuntimeError("already installed; use `iwm vm delete` to start over")
-        log("starting unattended Windows install (this takes 15-40 minutes)")
+        timeout = timeout or 3600 * self.time_factor
+        log("starting unattended Windows install (this takes " +
+            ("1-3 hours: emulated CPU" if self.emulated else "15-40 minutes") + ")")
         self.start(install=True, display=display)
         # Windows media prints "Press any key to boot from CD or DVD" for a few seconds. Press Enter
         # only while the screen is still (almost) black: once Setup's blue UI is up, a stray Enter
         # would hit its Cancel button.
         t0 = time.time()
-        while time.time() - t0 < 90:
+        while time.time() - t0 < 90 * self.time_factor:
             try:
                 if self.screen_brightness() < 0.08:
                     with self.qmp() as q:
