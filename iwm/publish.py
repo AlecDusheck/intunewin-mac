@@ -117,6 +117,10 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
         for k in ("displayName", "description", "largeIcon", "publisher", "developer", "owner", "notes",
                   "informationUrl", "privacyInformationUrl", "isFeatured"):
             body.pop(k, None)
+        # A PATCH without largeIcon clears the icon, so send the current one back.
+        icon = g.req("GET", f"/deviceAppManagement/mobileApps/{app_id}?$select=largeIcon").get("largeIcon")
+        if icon and icon.get("value"):
+            body["largeIcon"] = {"@odata.type": "#microsoft.graph.mimeContent", "type": icon.get("type"), "value": icon["value"]}
         print(f"updating app '{cur.get('displayName')}' ({app_id}) to {body.get('displayVersion')}", file=sys.stderr)
         g.req("PATCH", f"/deviceAppManagement/mobileApps/{app_id}", data=json.dumps(body))
     else:
