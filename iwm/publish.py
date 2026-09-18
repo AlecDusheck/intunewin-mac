@@ -116,7 +116,9 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
             raise RuntimeError(f"app {app_id} is {cur.get('@odata.type')}, not a Win32 app")
         # Keep the name/description/icon people see in Company Portal; update the package-specific fields.
         for k in ("displayName", "description", "largeIcon", "publisher", "developer", "owner", "notes",
-                  "informationUrl", "privacyInformationUrl", "isFeatured"):
+                  "informationUrl", "privacyInformationUrl", "isFeatured",
+                  # "can only be set via ODataAction: enableApplicableArchitectures" on existing apps
+                  "applicableArchitectures"):
             body.pop(k, None)
         # A PATCH without largeIcon clears the icon, so send the current one back.
         icon = g.req("GET", f"/deviceAppManagement/mobileApps/{app_id}?$select=largeIcon").get("largeIcon")
