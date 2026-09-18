@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, packager, recipes as rmod
-from .paths import CACHE, DIST, RECIPES, REPORTS, ROOT, VMDIR, WORK
+from .paths import CACHE, DIST, RECIPES, REPORTS, ROOT, VMDIR, WORK, WORKSPACE
 
 
 def _print(obj) -> None:
@@ -43,7 +43,7 @@ def cmd_doctor(a) -> int:
     vm = VM(a.vm)
     chk(f"VM '{a.vm}' created", vm.exists, "iwm vm setup --iso <windows.iso>")
     chk(f"VM '{a.vm}' installed + 'clean' snapshot", vm.exists and vm.cfg.installed and vm.has_snapshot("clean"), "iwm vm setup --iso <windows.iso>")
-    print(f"intunewin-on-mac {__version__}  host={host_arch()}  root={ROOT}")
+    print(f"intunewin-on-mac {__version__}  host={host_arch()}  root={ROOT}  workspace={WORKSPACE}")
     bad = 0
     for name, ok, hint, optional in checks:
         print(f"  [{'ok' if ok else '--'}] {name}" + (f"   -> {hint}" if not ok and hint else ""))

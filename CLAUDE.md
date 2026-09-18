@@ -3,6 +3,12 @@
 This project turns "make me an intunewin for X" into a built, tested package. Use `./bin/iwm`
 (never `IntuneWinAppUtil.exe`; it does not exist here). Run `./bin/iwm doctor` first if unsure.
 
+## Workspaces
+
+Recipes, `dist/` and `reports/` resolve against `$IWM_WORKSPACE` (default: this checkout). Org-specific
+apps live in that org's own repo (with a small `bin/iwm` wrapper that sets `IWM_WORKSPACE`), not here.
+The recipes in this repo are generic examples. Paths below are workspace-relative.
+
 ## The standard workflow for "package app X"
 
 1. **Recipe.** Check `./bin/iwm recipe list`. If missing, write `recipes/<id>.yaml` yourself
