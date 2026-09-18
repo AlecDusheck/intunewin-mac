@@ -227,7 +227,14 @@ def detection_rules(recipe: Recipe, ctx: dict) -> list[dict]:
         elif t == "script":
             script = r.get("script")
             if r.get("file"):
-                script = Path(r["file"]).read_text()
+                # relative to the recipe file, then the workspace (same lookup as extra_files)
+                sp = Path(r["file"])
+                if not sp.is_absolute():
+                    for base in (recipe.path.parent if recipe.path else Path("."), RECIPES.parent):
+                        if (base / sp).exists():
+                            sp = base / sp
+                            break
+                script = sp.read_text()
             rules.append({
                 "@odata.type": "#microsoft.graph.win32LobAppPowerShellScriptRule",
                 "ruleType": "detection",
