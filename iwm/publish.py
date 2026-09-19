@@ -119,7 +119,8 @@ def publish(intunewin: Path, manifest_path: Path, tenant: str = "common", client
         size_encrypted = payload_info.file_size
 
     # An existing Graph token (e.g. from Connect-MgGraph) avoids a second, device-code sign-in.
-    g = Graph(token or os.environ.get("IWM_GRAPH_TOKEN") or get_token(tenant, client_id))
+    # cli passes client_id=None when --client-id isn't given; MSAL then sends no client_id at all.
+    g = Graph(token or os.environ.get("IWM_GRAPH_TOKEN") or get_token(tenant, client_id or DEFAULT_CLIENT_ID))
     body = _prepare_body(manifest)
     keep_icon = None
     if app_id:
