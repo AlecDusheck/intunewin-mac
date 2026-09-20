@@ -34,9 +34,12 @@ def filename_from_url(url: str, resp: Optional[requests.Response] = None) -> str
     return name or "download.bin"
 
 
-def download(url: str, dest: Path, sha256: Optional[str] = None, refresh: bool = False, quiet: bool = False) -> Path:
+def download(url: str, dest: Path, sha256: Optional[str] = None, refresh: bool = False, quiet: bool = False,
+             user_agent: Optional[str] = None) -> Path:
     """Download url to dest (a file path). Reuses an existing file unless refresh=True.
-    A sidecar `<dest>.meta.json` records the source URL, ETag, size and hash."""
+    A sidecar `<dest>.meta.json` records the source URL, ETag, size and hash.
+    user_agent overrides the default UA: some vendors answer 403 to anything that does not look
+    like a browser (recipe: `sources.<arch>.user_agent`)."""
     dest = Path(dest)
     meta_path = dest.with_name(dest.name + ".meta.json")
     if url.startswith("file://"):                      # local source (recipe `path:`): always fresh copy
@@ -58,7 +61,7 @@ def download(url: str, dest: Path, sha256: Optional[str] = None, refresh: bool =
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
-    with requests.get(url, stream=True, timeout=60, headers={"User-Agent": UA}, allow_redirects=True) as r:
+    with requests.get(url, stream=True, timeout=60, headers={"User-Agent": user_agent or UA}, allow_redirects=True) as r:
         r.raise_for_status()
         total = int(r.headers.get("content-length") or 0)
         done = 0
@@ -104,8 +107,8 @@ def resolve_github_asset(repo: str, asset_regex: str) -> tuple[str, str, str]:
     raise LookupError(f"no asset in {repo} {rel.get('tag_name')} matches /{asset_regex}/")
 
 
-def head_info(url: str) -> dict:
-    r = requests.head(url, allow_redirects=True, timeout=30, headers={"User-Agent": UA})
+def head_info(url: str, user_agent: Optional[str] = None) -> dict:
+    r = requests.head(url, allow_redirects=True, timeout=30, headers={"User-Agent": user_agent or UA})
     return {"status": r.status_code, "size": int(r.headers.get("content-length") or 0),
             "etag": r.headers.get("etag"), "last_modified": r.headers.get("last-modified"),
             "type": r.headers.get("content-type"), "final_url": r.url,

@@ -170,13 +170,14 @@ def fetch(recipe: Recipe, arch: str, refresh: bool = False) -> dict:
     if members:
         # The archive stays out of the package: download beside it, then rebuild source/ from scratch.
         installer = dl.download(src["url"], sdir.parent / "download" / src["filename"],
-                                sha256=src.get("sha256"), refresh=refresh)
+                                sha256=src.get("sha256"), refresh=refresh, user_agent=src.get("user_agent"))
         shutil.rmtree(sdir, ignore_errors=True)
         sdir.mkdir(parents=True)
         extract_members(installer, sdir, members)
     else:
         sdir.mkdir(parents=True, exist_ok=True)
-        installer = dl.download(src["url"], sdir / src["filename"], sha256=src.get("sha256"), refresh=refresh)
+        installer = dl.download(src["url"], sdir / src["filename"], sha256=src.get("sha256"), refresh=refresh,
+                                user_agent=src.get("user_agent"))
 
     # copy extra files (paths relative to the recipe file or project root)
     for extra in recipe.data.get("extra_files") or []:
