@@ -21,7 +21,19 @@ A recipe is a YAML file in recipes/<id>.yaml:
     install_context: system         # system | user
     restart_behavior: basedOnReturnCode   # suppress | force | allow
     detection: auto                 # auto (MSI product code) or a list of rules
-    requirements: {min_os: W10_1607, arch: [x64, arm64]}
+    requirements:                   # {min_os: W10_1607, arch: [x64, arm64]} inline form also works
+      min_os: W10_1607
+      arch: [x64, arm64]
+      rules:                        # optional: extra requirement rules, same shapes as detection.
+        - type: script              # Intune evaluates these before installing: where one is not met
+          file: scripts/req.ps1     # the app is "not applicable", so it never installs and an
+          output: boolean           # enrollment status page never waits for it.
+          operator: equal
+          value: 'true'
+          name: Only after OOBE     # shown in the portal
+          run_as: system            # system | user
+        # also {type: file, path: ..., file: ..., detection: exists}
+        # and  {type: registry, key: ..., value_name: ..., detection: exists}
     extra_files: [scripts/foo.ps1]  # copied into the package next to the installer
     extract: [setup/Msi/a.msi]      # optional: the download is an archive (zip / self-extracting exe);
                                     # only these members (flattened) go in the package, not the archive.
@@ -228,8 +240,21 @@ def fetch(recipe: Recipe, arch: str, refresh: bool = False) -> dict:
 
 def detection_rules(recipe: Recipe, ctx: dict) -> list[dict]:
     """Normalise recipe detection rules to Microsoft Graph win32LobApp rule objects."""
-    det = recipe.data.get("detection", "auto")
+    return _rules(recipe, ctx, recipe.data.get("detection", "auto"), "detection")
+
+
+def requirement_rules(recipe: Recipe, ctx: dict) -> list[dict]:
+    """Requirement rules ((recipe: requirements.rules). Intune evaluates these before installing:
+    where one is not met the app is 'not applicable', so it never installs and an enrollment status
+    page never waits for it."""
+    spec = (recipe.data.get("requirements") or {}).get("rules") or []
+    return _rules(recipe, ctx, spec, "requirement")
+
+
+def _rules(recipe: Recipe, ctx: dict, det, rule_type: str) -> list[dict]:
     rules: list[dict] = []
+    if rule_type == "requirement" and not det:
+        return rules
     if det == "auto" or det is None:
         if ctx.get("product_code"):
             det = [{"type": "msi"}]
@@ -241,7 +266,7 @@ def detection_rules(recipe: Recipe, ctx: dict) -> list[dict]:
         if t == "msi":
             rules.append({
                 "@odata.type": "#microsoft.graph.win32LobAppProductCodeRule",
-                "ruleType": "detection",
+                "ruleType": rule_type,
                 "productCode": render(r.get("product_code", "{product_code}"), ctx),
                 "productVersionOperator": r.get("operator", "notConfigured"),
                 "productVersion": render(r["version"], ctx) if r.get("version") else None,
@@ -249,7 +274,7 @@ def detection_rules(recipe: Recipe, ctx: dict) -> list[dict]:
         elif t == "file":
             rules.append({
                 "@odata.type": "#microsoft.graph.win32LobAppFileSystemRule",
-                "ruleType": "detection",
+                "ruleType": rule_type,
                 "check32BitOn64System": bool(r.get("check32BitOn64System", False)),
                 "path": render(r["path"], ctx),
                 "fileOrFolderName": render(r["file"], ctx),
@@ -260,7 +285,7 @@ def detection_rules(recipe: Recipe, ctx: dict) -> list[dict]:
         elif t == "registry":
             rules.append({
                 "@odata.type": "#microsoft.graph.win32LobAppRegistryRule",
-                "ruleType": "detection",
+                "ruleType": rule_type,
                 "check32BitOn64System": bool(r.get("check32BitOn64System", False)),
                 "keyPath": render(r["key"], ctx),
                 "valueName": render(r.get("value_name", ""), ctx) or None,
@@ -279,15 +304,24 @@ def detection_rules(recipe: Recipe, ctx: dict) -> list[dict]:
                             sp = base / sp
                             break
                 script = sp.read_text()
-            rules.append({
+            rule = {
                 "@odata.type": "#microsoft.graph.win32LobAppPowerShellScriptRule",
-                "ruleType": "detection",
+                "ruleType": rule_type,
                 "scriptContent": script,   # publish step base64-encodes this
                 "enforceSignatureCheck": bool(r.get("enforce_signature", False)),
                 "runAs32Bit": bool(r.get("run_as_32bit", False)),
-            })
+            }
+            if rule_type == "requirement":
+                # A detection script is pass/fail on its exit code; a requirement script has to say
+                # what it prints and what counts as a match.
+                rule["displayName"] = r.get("name") or f"{recipe.id} requirement"
+                rule["runAsAccount"] = r.get("run_as", "system")
+                rule["operationType"] = r.get("output", "string")   # string|integer|boolean|dateTime|version|float
+                rule["operator"] = r.get("operator", "equal")
+                rule["comparisonValue"] = render(str(r["value"]), ctx) if r.get("value") is not None else None
+            rules.append(rule)
         else:
-            raise ValueError(f"unknown detection rule type: {t}")
+            raise ValueError(f"unknown {rule_type} rule type: {t}")
     return rules
 
 
@@ -302,7 +336,7 @@ def build(recipe: Recipe, arch: str, refresh: bool = False, ctx: Optional[dict] 
     msi_info = (ctx.get("msi") or {}).get("msi_info")
     print(f"building {out.name} from {sdir} (setup file: {ctx['setup_file']})", file=sys.stderr)
     res = packager.create_intunewin(sdir, ctx["setup_file"], out, name=ctx["setup_file"], msi=msi_info)
-    rules = detection_rules(recipe, ctx)
+    rules = detection_rules(recipe, ctx) + requirement_rules(recipe, ctx)
     manifest = graph_body(recipe, ctx, res, rules)
     (out_dir / f"{base}.intune.json").write_text(json.dumps(manifest, indent=2))
     (out_dir / f"{base}.rules.json").write_text(json.dumps(rules, indent=2))
