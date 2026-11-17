@@ -34,6 +34,8 @@ A recipe is a YAML file in recipes/<id>.yaml:
           run_as: system            # system | user
         # also {type: file, path: ..., file: ..., detection: exists}
         # and  {type: registry, key: ..., value_name: ..., detection: exists}
+        # Script rules ({type: script, file: x.ps1} or inline script:) also work under detection:,
+        # where the script's exit code + output decide. The literal {version} in a script is replaced.
     extra_files: [scripts/foo.ps1]  # copied into the package next to the installer
     extract: [setup/Msi/a.msi]      # optional: the download is an archive (zip / self-extracting exe);
                                     # only these members (flattened) go in the package, not the archive.
@@ -304,6 +306,8 @@ def _rules(recipe: Recipe, ctx: dict, det, rule_type: str) -> list[dict]:
                             sp = base / sp
                             break
                 script = sp.read_text()
+            # Only the literal {version} is substituted: PowerShell's own braces rule out format_map.
+            script = (script or "").replace("{version}", str(ctx.get("version", "")))
             rule = {
                 "@odata.type": "#microsoft.graph.win32LobAppPowerShellScriptRule",
                 "ruleType": rule_type,
