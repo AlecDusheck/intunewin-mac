@@ -472,9 +472,11 @@ def check_update(recipe: Recipe, arch: str) -> dict:
         changed = last is not None and last.get("url") != src["url"]
     else:                                            # fixed URL: compare what the server reports
         try:
-            h = dl.head_info(src["url"])
+            h = dl.head_info(src["url"], user_agent=src.get("user_agent"))
         except Exception as e:
             return {"status": "error", "detail": str(e)[:200], "last": last}
+        if h["status"] >= 400:                       # an error page's headers say nothing about the file
+            return {"status": "error", "detail": f"HTTP {h['status']} from {src['url']}", "last": last}
         now = {"etag": h.get("etag"), "last_modified": h.get("last_modified"), "size": h.get("size")}
         changed = last is not None and any(
             last.get(k) and now.get(k) and str(last[k]) != str(now[k]) for k in ("etag", "last_modified", "size"))
